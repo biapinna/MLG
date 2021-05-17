@@ -1,0 +1,1002 @@
+---
+title: "Fatores de risco para doenças cardíacas"
+author: "Beatriz Rodrigues Pinna"
+date: "30 de Março de 2021"
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{dcolumn}
+  - \usepackage{lipsum}
+  - \usepackage{mathtools}
+output:
+  beamer_presentation:
+    latex_engine: xelatex
+    theme: "CambridgeUS"
+    colortheme: "seahorse"
+    fonttheme: "structurebold"
+fontsize: 6pt    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning =  FALSE, error = FALSE, message = FALSE, fig.width = 10, fig.height = 5,comment = NA)
+library(tidyverse)
+library(kableExtra)
+library(knitr)
+library(ggpubr)
+library(cowplot)
+library(corrplot)
+library(plyr)
+library(caret)
+library(stargazer)
+library(ResourceSelection)
+library(epiDisplay)
+library(car)
+```
+
+## Introdução
+
+
+Doenças cardiovasculares são consistentemente as maiores causas de morte no mundo desde a segunda metade do século XX e não apresentam qualquer sinal de que deixarão de ocupar essa posição no futuro próximo. 
+
+A insuficiência cardíaca é a \textit{causa mortis} mais usual em decorrência de cardiopatias. Dado o alto custo e risco de vida, a política de saúde pública tem se voltado para a detecção precoce e o controle dos principais fatores comportamentais e de riscos relacionados a mortalidade por insuficiência cardíaca.
+
+<!-- fatores de risco: hipertensão, diabetes, hiperlipidemia ou doença já estabelecida. fatores comportamentais: como uso de tabaco, dieta não saudável e obesidade, sedentarismo e uso prejudicial de álcool, usando estratégias para toda a população. -->
+
+---
+
+O objetivo do trabalho é estudar a ocorrência de falecimentos em pessoas com doenças cardiovasculares ou que apresentam alto risco cardiovascular. Tal estudo é interessante, pois identificando os fatores de risco, torna-se possível auxiliar o juízo médico no prognóstico dos pacientes.
+
+Neste trabalho, o conjunto de dados utilizados foi o *Heart Failure Prediction* extraído do site [Kaggle](https://www.kaggle.com/andrewmvd/heart-failure-clinical-data). Os dados foram coletados em 2015, entre Abril e Dezembro, no Hospital Aliado em Faisalabad (Paquistão) de pacientes admitidos por disfunção sistólica do ventrículo esquerdo.
+
+
+<!-- pessoas com doenças cardiovasculares ou que apresentam alto risco cardiovascular, devido à presença de um ou mais fatores de risco, precisam de detecção e gerenciamento precoces. -->
+<!-- população de pesquisa se limitar somente aos casos mais graves. -->
+
+
+## Descrição das Variáveis
+
+
+O conjunto de dados possui 299 observações e 13 variáveis:
+
+
+```{r}
+dados = read_csv("heart_failure_clinical_records_dataset.csv")
+
+names(dados) = c("Idade", "Anemia", "CPK", "Diabetes",
+"FEVE", "Hipertensão", "Plaquetas", "Creatinina",
+"Sódio", "Sexo", "Tabagismo", "Tempo", "Falecimento")
+```
+
+
+```{r}
+#dados$Tempo = NULL
+
+dados$Idade = as.integer(round(dados$Idade))
+
+dados$Anemia = factor(dados$Anemia, ordered = FALSE)
+
+dados$Diabetes = factor(dados$Diabetes, ordered = FALSE)
+
+dados$Hipertensão = factor(dados$Hipertensão, ordered = FALSE)
+
+dados$Sexo = factor(dados$Sexo, ordered = FALSE)
+
+dados$Tabagismo = factor(dados$Tabagismo, ordered = FALSE)
+
+dados$Falecimento = factor(dados$Falecimento, ordered = FALSE)
+
+```
+
+
+```{r}
+test_tbl = tibble(
+  Variável = c("Idade","Anemia","CPK","Diabetes","FEVE","Hipertensão","Plaquetas","Creatinina","Sódio","Sexo","Tabagismo","Tempo","Falecimento"),
+  Descrição = c("Idade em anos no tempo de admissão",
+                "Diminuição do número de hemácias ou hemoglobina",
+                "Nível sanguíneo de creatinofosfoquinase em mcg/L",
+                "Níveis elevados de glicose no sangue por um longo intervalode tempo",
+                "Porcentagem média do sangue coletado no fim do enchimento
+diastólico após ejeção do ventrículo esquerdo",
+                "Pressão arterial constantemente elevada",
+                "Nível sanguíneo de plaquetas em quiloplaquetas/mL",
+                "Nível sanguíneo de creatinina em mg/dL",
+                "Nível sanguíneo de sódio em mEq/L",
+                "Sexo biológico",
+                "Consumo consistente de tabaco",
+                "Tempo sob observação em dias",
+                "Falecimento durante o tempo sob observação"),
+  Tipo = c("Contínua","Binária","Contínua","Binária","Contínua","Binária","Contínua","Contínua","Contínua","Binária","Binária","Contínua","Binária")
+    
+    )
+
+
+knitr::kable(test_tbl, format = "latex", booktabs = T) %>%
+  kableExtra::kable_styling(latex_options="scale_down") 
+```
+
+```{r}
+levels(dados$Anemia)<-c("Não", "Sim")
+levels(dados$Diabetes)<-c("Não", "Sim")
+levels(dados$Hipertensão)<-c("Não", "Sim")
+levels(dados$Tabagismo)<-c("Não", "Sim")
+levels(dados$Falecimento)<-c("Não", "Sim")
+levels(dados$Sexo)<- c("Mulher", "Homem")
+```
+
+
+<!-- optou-se por excluir A variável Tempo por ser uma variável censurada, já que não sabemos exatamente o seu valor, pois só temos até a última vez que se conseguiu mensurar seu valor, mas esses momentos são diferentes para cada observação. -->
+
+## Análise Exploratória
+
+Variável resposta: **Falecimento**
+
+```{r}
+count_pct <- function(df) {
+  return(
+    df %>%
+      tally %>% 
+      mutate(n_pct = 100*n/sum(n))
+  )
+}
+
+df_y <- dados %>% 
+  group_by(Falecimento) %>% 
+  count_pct
+
+knitr::kable(df_y, format = "latex", booktabs = T,digits = c(0, 2,2),col.names = c('Falecimento','Frequência', 'Proporção')) %>%
+  kableExtra::kable_styling(font_size = 9) 
+
+```
+
+
+---
+
+<!-- Podemos perceber que para quase todas as variáveis em questão, os grupos 0 e 1 apresentam proporções semelhantes e provavelmente não implicará no falecimento ou não dos pacientes. -->
+
+```{r cars}
+g1<-ggplot(dados, aes(Anemia, fill = Falecimento)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent)+ ylab("%") + 
+  xlab("Anemia") +  theme_pubclean() + 
+  scale_fill_brewer(palette="Accent") 
+
+g2<-ggplot(dados, aes(Diabetes, fill = Falecimento)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent)+ ylab("%") + 
+  xlab("Diabetes") +  theme_pubclean() + 
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+g3<-ggplot(dados, aes(Hipertensão, fill = Falecimento)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent)+ ylab("%") + 
+  xlab("Hipertensão") +  theme_pubclean() + 
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+g4<-ggplot(dados, aes(Tabagismo, fill = Falecimento)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent)+ ylab("%") + 
+  xlab("Tabagismo") +  theme_pubclean() + 
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+g5<-ggplot(dados, aes(Sexo, fill = Falecimento)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent)+ ylab("%") + 
+  xlab("Sexo") +  theme_pubclean() + 
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+legend <- get_legend(
+  g1 + theme(legend.box.margin =  margin(0, 0, 0, 12))
+)
+
+
+g1 = g1 + theme(legend.position = "none")
+
+
+
+cowplot::plot_grid(g1,g2,g3,g4,g5, legend)
+```
+
+---
+
+<!-- no boxplot das variáveis FEVE e Creatinina a diferença do formato das densidades parece indicar padrões distintos e não apenas mais dispersos. -->
+
+```{r}
+box1 = ggplot(data = dados,
+       mapping = aes(x = Falecimento, y = CPK, fill = Falecimento)) +
+  geom_boxplot(outlier.alpha = 0.5, width = 0.5) +
+  labs(x = 'Falecimento',
+       y = 'CPK',
+       fill = 'Falecimento') + theme_pubclean() + 
+  stat_summary(fun=mean, geom="point", shape=18, size=3, color="red", fill="red") +
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+box2 = ggplot(data = dados,
+       mapping = aes(x = Falecimento, y = Idade, fill = Falecimento)) +
+  geom_boxplot(outlier.alpha = 0.5, width = 0.5) +
+  labs(x = 'Falecimento',
+       y = 'Idade',
+       fill = 'Falecimento') + theme_pubclean() + 
+  stat_summary(fun=mean, geom="point", shape=18, size=3, color="red", fill="red") +
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+box3 = ggplot(data = dados,
+       mapping = aes(x = Falecimento, y = FEVE, fill = Falecimento)) +
+  geom_boxplot(outlier.alpha = 0.5, width = 0.5) +
+  labs(x = 'Falecimento',
+       y = 'FEVE',
+       fill = 'Falecimento') + theme_pubclean() + 
+  stat_summary(fun=mean, geom="point", shape=18, size=3, color="red", fill="red") +
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+box4 = ggplot(data = dados,
+       mapping = aes(x = Falecimento, y = Plaquetas, fill = Falecimento)) +
+  geom_boxplot(outlier.alpha = 0.5, width = 0.5) +
+  labs(x = 'Falecimento',
+       y = 'Plaquetas',
+       fill = 'Falecimento') + theme_pubclean() + 
+  stat_summary(fun=mean, geom="point", shape=18, size=3, color="red", fill="red") +
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+box5 = ggplot(data = dados,
+       mapping = aes(x = Falecimento, y = Creatinina, fill = Falecimento)) +
+  geom_boxplot(outlier.alpha = 0.5, width = 0.5) +
+  labs(x = 'Falecimento',
+       y = 'Creatinina',
+       fill = 'Falecimento') + theme_pubclean() +
+  stat_summary(fun=mean, geom="point", shape=18, size=3, color="red", fill="red") +
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+box6 = ggplot(data = dados,
+       mapping = aes(x = Falecimento, y = Sódio, fill = Falecimento)) +
+  geom_boxplot(outlier.alpha = 0.5, width = 0.5) +
+  labs(x = 'Falecimento',
+       y = 'Sódio',
+       fill = 'Falecimento') + theme_pubclean() +
+  stat_summary(fun=mean, geom="point", shape=18, size=3, color="red", fill="red") +
+  scale_fill_brewer(palette="Accent") +
+  theme(legend.position = "none")
+
+
+
+cowplot::plot_grid(box1,box2,box3,box4,box5,box6)
+```
+
+
+
+
+## Regressão Logística
+
+Como a variável resposta desse estudo é o falecimento ou não dos pacientes deste hospital, ou seja, uma variável binária, optou-se pela escolha de um modelo Bernoulli que modela o fracasso ou sucesso de um evento. Em nosso caso, o sucesso é a morte do paciente e o fracasso, consequentemente, o não falecimento do paciente
+
+Os dados foram separados em uma base de treino e outra de teste/validação. Desse modo, foi possível obter as métricas relativas a acurácia do modelo proposto. Dito isso, optou-se por classificar 70% dos dados como treino e os 30% restantes como teste/validação.
+
+```{r}
+set.seed(100)
+dados$Tempo <- NULL
+trainDataIndex <- createDataPartition(dados$Falecimento, p=0.7, list = F)  # 70% training data
+trainData <- dados[trainDataIndex, ]
+testData <- dados[-trainDataIndex, ]
+
+#trainData <- trainData[c(-152),]
+
+Proporção = as.data.frame(cbind(table(trainData$Falecimento)/length(trainData$Falecimento),              table(testData$Falecimento)/length(testData$Falecimento)))
+
+Proporção2 = cbind(row.names(Proporção),Proporção)
+rownames(Proporção2)<-NULL
+
+knitr::kable(Proporção2, format = "latex", booktabs = T,digits = c(0, 3,3),col.names = c('Falecimento','Treino','Teste/Validação')) %>%
+  kableExtra::kable_styling(font_size = 9)
+```
+
+---
+
+## Resultados dos modelos ajustados
+
+Para selecionar as variáveis que irão compor o modelo de regressão com as funções de ligação probit, logit e log-log complementar (C log-log) foi utilizado
+o algoritmo *Stepwise* considerando como critério de seleção o AIC.
+
+<!-- A seleção de variáveis foi realizada através do algoritmo stepwise considerando como critério de seleção o AIC (Critério de Informação de Akaike) -->
+
+
+```{r}
+modelo_logit=glm(Falecimento ~. ,family = binomial(logit), data=trainData)
+#summary(modelo_logit)
+#PsedoR2(modelo_logit)
+#stepAIC(modelo_logit, direction = 'both', trace = FALSE)
+
+modelo_probit=glm(Falecimento ~. ,family = binomial(probit), data=trainData)
+#summary(modelo_probit)
+#PseudoR2(modelo_probit)
+#stepAIC(modelo_probit, direction = 'both', trace = FALSE)
+
+modelo_loglog=glm(Falecimento ~. ,family = binomial(cloglog), data=trainData)
+#summary(modelo_loglog)
+#PseudoR2(modelo_loglog)
+#stepAIC(modelo_loglog, direction = 'both', trace = FALSE)
+
+```
+
+<!-- Logit: o modelo final é o modelo com as variáveis: Idade, FEVE, Creatinina, CPK e Sexo. -->
+```{r}
+modelo_logit_final=glm(Falecimento ~ Idade + CPK + FEVE + Creatinina +
+                         Sexo,family = binomial(logit), data=trainData)
+#summary(modelo_logit_final)
+#PseudoR2(modelo_logit_final)
+```
+
+<!-- Probit: o modelo final é o modelo com as variáveis: Idade, FEVE, Creatinina, CPK e Sexo.  -->
+```{r}
+modelo_probit_final=glm(Falecimento ~ Idade + CPK + FEVE + Creatinina +
+                          Sexo,family = binomial(probit), data=trainData)
+#summary(modelo_probit_final)
+#PseudoR2(modelo_probit_final)
+```
+
+<!-- Log-log: o modelo final é o modelo com as variáveis: Idade, CPK, FEVE, Hipertensão e Creatinina. -->
+```{r}
+modelo_loglog_final=glm(Falecimento ~ Idade + CPK + FEVE + Hipertensão + 
+    Creatinina,family = binomial(cloglog), data=trainData)
+#summary(modelo_loglog_final)
+#PseudoR2(modelo_loglog_final)
+```
+
+
+
+```{r rcodehere, results='asis'}
+WrapPageWidthLatex <- function(InputCode){
+    OutputCode = append("\\resizebox{\\textwidth}{!}{", InputCode)
+    OutputCode = rlang::prepend("}", OutputCode)    
+    return(OutputCode)
+}
+
+
+
+cat(
+    WrapPageWidthLatex(
+        capture.output(
+            stargazer(
+                modelo_logit_final, modelo_probit_final, modelo_loglog_final,
+                align=TRUE,
+                single.row=TRUE,
+                ci=TRUE,
+                omit.stat=c("LL", "ser", "f"), 
+                font.size="small", 
+                header=FALSE, 
+                column.sep.width = "0pt", 
+                float = FALSE, 
+                type="latex"
+                )
+            )
+        )
+    )    
+
+```
+
+---
+
+```{r}
+#the Pearson χ2 test statistic
+#sum(residuals(modelo_logit_final, type = "pearson")^2)
+#G2  test statistic - deviance
+#sum(residuals(modelo_logit_final, type = "deviance")^2)
+
+```
+
+## Comparação das Ligações
+
+As funções de ligação logit, probit e log-log complementar são as principais funções usadas para dados binários, que garantem que as probabilidades estimadas fiquem entre 0 e 1.
+
+<!-- Para seleção de modelos diversas medidas podem ser utilizadas: aic, deviance x2 de pearson -->
+<!-- através da análise da Deviance e pearson, a qualidade do ajuste (valores) são muito próximos nas 3 funções de ligação -->
+<!-- Observamos que as estatísticas da deviance e pearson possuem os mesmos graus de liberdade pq os modelos possuem a mesma quantidade de variáveis. Ao analisar o teste não rejeitamos a hipótese nula de que o modelo é correto ao nível de 5%. -->
+
+
+
+```{r}
+
+gl1=length(trainData$Falecimento)-length(coef(modelo_logit_final))
+gl2=length(trainData$Falecimento)-length(coef(modelo_probit_final))
+gl3=length(trainData$Falecimento)-length(coef(modelo_loglog_final))
+
+
+models_tbl = tibble(
+  modelo = c("Logit","Probit","C log-log"),
+  Deviance = c(deviance(modelo_logit_final),deviance(modelo_probit_final),deviance(modelo_loglog_final)),
+  Est_Pearson = c(sum(residuals(modelo_logit_final, type = "pearson")^2),
+                  sum(residuals(modelo_probit_final, type = "pearson")^2),
+                  sum(residuals(modelo_loglog_final, type = "pearson")^2)),
+  gl = c(gl1,gl2,gl3),
+  qchisq = c(qchisq(0.95,gl1),qchisq(0.95,gl2),qchisq(0.95,gl3))
+
+)
+
+
+knitr::kable(models_tbl, format = "latex", booktabs = T,digits = c(0,2,2,1,2),col.names = c('Tipo de Ligação','Estatística Deviance',paste0('Estatística $\\chi^2$ de Pearson'),"df", "$\\chi^2_{N-p}$"), escape = FALSE) %>%
+  kableExtra::kable_styling(font_size = 9)
+```
+
+
+
+
+---
+
+## Teste Hosmer-Lemeshow
+
+O teste de Hosmer-Lemeshow tem como objetivo atestar a qualidade de ajuste do modelo, ou seja, o teste comprova se o modelo obtido explica adequadamente os dados observados da variável resposta.
+
+O teste de Hosmer-Lemeshow também indicou que os modelos obtidos explicam adequadamente os dados observados, ao nível de 5% de significância.
+
+
+<!-- O teste é baseado na divisão dos dados em g grupos (geralmente g = 10) de acordo com as probabilidades previstas, como por exemplo, em uma subdivisão de 10, tem-se grupos com probabilidades entre 0 e 0,1, entre 0,1 e 0,2, e assim sucessivamente até o último grupo que tem as probabilidades previstas entre 0,9 e 1. Sob a hipótese nula de que o modelo está bem ajustado, a estatística C segue distribuição χ2 com t graus de liberdade.  -->
+
+<!-- hipótese nula: o modelo está bem ajustado -->
+
+<!-- NÃO REJEITA H0!! p-valor > 5% nivel de significancia -->
+
+```{r}
+hoslem_logit<-hoslem.test(modelo_logit_final$y,fitted(modelo_logit_final))
+hoslem_probit<-hoslem.test(modelo_probit_final$y,fitted(modelo_probit_final))
+hoslem_loglog<-hoslem.test(modelo_loglog_final$y,fitted(modelo_loglog_final))
+
+hoslem_tbl = tibble(
+  modelo = c("Logit","Probit","C log-log"),
+  Estatística = c(hoslem_logit$statistic,hoslem_probit$statistic,hoslem_loglog$statistic),
+  df = c(hoslem_logit$parameter[["df"]],hoslem_probit$parameter[["df"]],hoslem_loglog$parameter[["df"]]),
+  p_valor = c(hoslem_logit$p.value,hoslem_probit$p.value,hoslem_loglog$p.value)
+
+)
+
+knitr::kable(hoslem_tbl, format = "latex", booktabs = T,digits = c(0,3, 0,3),col.names = c('Tipo de Ligação','Estatística','df','p-valor')) %>%
+  kableExtra::kable_styling(font_size = 9)
+
+```
+
+
+---
+
+## Interpretação dos Parâmetros
+
+Optou-se por utilizar a função de ligação logit porque mostrou ser mais adequada ao problema proposto inicialmente e pela maior facilidade de interpretação dos resultados.
+
+O preditor linear do modelo ajustado é dado pela expressão:
+
+\[
+\begin{aligned}
+\text{logit}(\hat{p}_i) = ln\left(\frac{\hat{p}_i}{1-\hat{p}_i}\right) 
+&= −3{,}124 + 0{,}075\text{Idade} + 0{,}0004\text{CPK} \\
+&−0{,}08\text{FEVE} +0{,}517 \text{Creatinina} - 0{,}641\text{Sexo}
+\end{aligned}
+\]
+
+---
+
+Em regressão logística, podemos interpretar os parâmetros estimados do modelo através da Razão de chances (*Odds ratio*).
+
+<!-- homens possuem 47,3% menos chances de ter problemas cardíacos, que levem ao falecimento, do que mulheres, dado que o sexo de referência é o feminino. -->
+
+<!-- O coeficiente de idade diz que, mantendo as outras variáveis constantes (em um valor fixo), veremos um aumento de 7,8% nas chances de falecimento por um aumento de uma unidade idade. Isso acontece porque exp(0.075) = 1.077884. -->
+
+<!-- O coeficiente da creatinina diz que, mantendo as outras variáveis constantes (em um valor fixo), veremos um aumento de 67,6% nas chances de falecimento por um aumento de uma unidade creatinina. Isso acontece porque exp(0.517) = 1.676989 -->
+
+<!-- O coeficiente da feve diz que, mantendo as outras variáveis constantes (em um valor fixo), veremos uma diminuição de 92,3% nas chances de falecimento por um aumento de uma unidade feve. Isso acontece porque exp(-0.08) = 0.9231163 -->
+
+<!-- O coeficiente da cpk diz que, mantendo as outras variáveis constantes (em um valor fixo), veremos um aumento de 0,04% nas chances de falecimento por um aumento de uma unidade cpk Isso acontece porque exp(0.0004) = 1.0004 -->
+
+```{r}
+odds <- as.data.frame(exp(cbind(coef(modelo_logit_final), confint(modelo_logit_final))))
+#logistic.display(modelo_logit_final)
+
+odds <- as.data.frame(cbind(Variável = rownames(odds), odds))
+
+rownames(odds) <- NULL
+
+knitr::kable(odds, format = "latex", booktabs = T,digits = c(0,3, 3,3),col.names = c('Variável','Razão de Chance','Lim inf','Lim sup')) %>%
+  kableExtra::kable_styling(font_size = 9) %>%
+  add_header_above(c(" " = 2, "IC de 95%" = 2))
+```
+
+
+
+## Resíduos
+
+A análise de resíduos é uma importante etapa do ajuste dos modelos para dados binários.
+
+```{r}
+resid.d = residuals(modelo_logit_final, type = "deviance")
+resid.p = residuals(modelo_logit_final, type = "pearson")
+std.res.d = residuals(modelo_logit_final, type = "deviance")/sqrt(1 - hatvalues(modelo_logit_final))
+std.res.p = residuals(modelo_logit_final, type = "pearson")/sqrt(1 - hatvalues(modelo_logit_final))
+
+residuos <- data.frame(std.res.p,std.res.d)
+
+r1<-ggplot(residuos,aes(std.res.p)) + 
+  geom_density() +  
+  ylab("Densidade") +  xlab("Resíduos de Pearson Padronizado") +
+  theme_pubclean() + 
+  scale_color_brewer(palette="Accent") #+ stat_function(fun = function(x) dnorm(x, mean = 0, sd = 1),color = "darkred", size = 1)
+
+r2<-ggplot(residuos,aes(std.res.d)) + 
+  geom_density() +  
+  ylab("Densidade") +  xlab("Resíduos da Deviance Padronizado") +
+  theme_pubclean() + 
+  scale_color_brewer(palette="Accent") #+ stat_function(fun = function(x) dnorm(x, mean = 0, sd = 1),color = "darkred", size = 1)
+
+cowplot::plot_grid(r1, r2)
+```
+
+
+
+```{r}
+#par(mfrow=c(1, 2))
+#plot(density(resid.p), main='Resíduos da Deviance (red) x Pearson', ylab = #"Densidade")
+#lines(density(resid.d), col='red')
+#
+#plot(density(std.res.p), main='Resíduos da Deviance Padronizado (red) x \n Pearson #Padronizado', ylab = "Densidade")
+#lines(density(std.res.d), col='red')
+```
+
+
+---
+
+Outra alternativa é avaliar a qualidade do ajuste com base nos resíduos quantílicos aleatorizados.
+
+<!-- No gráfico da esquerda nota-se que os resíduos estão dispersos em torno de 0 entre -3 e 3. Além disso, no gráfico a direita verifica-se que os resíduos apresentam boa aderência à distribuição Normal, indicativo de bom ajuste. -->
+
+```{r}
+library(statmod)
+par(mfrow=c(1,2))
+
+resq <- qresiduals(modelo_logit_final)
+
+plot(resq)
+
+residuosq <- qresiduals(modelo_logit_final)
+qqnorm(residuosq)
+qqline(residuosq, col = 2)
+```
+
+---
+
+O gráfico de resíduos simulados permite verificar a adequação do modelo ajustado mesmo que os resíduos não tenham uma aproximação adequada com a distribuição Normal.
+
+<!-- Neste tipo de gráfico espera-se, para um modelo bem ajustado, os pontos (resíduos) dispersos aleatoriamente entre os limites do envelope. -->
+
+<!-- Deve-se ficar atento à presença de pontos fora dos limites do envelope ou ainda a pontos dentro dos limites porém apresentando padrões sistemáticos. -->
+
+<!-- Os resíduos estão dispersos no interior dos envelopes simulados, sem aparente padrão sistemático dando indício de que o modelo está bem ajustado.  -->
+
+```{r}
+envelope=function(modelo){
+  dados=na.omit(modelo$data)
+  nsim=100
+  n=modelo$df.null+1
+  r1=sort(rstandard(modelo,type='deviance'))
+  m1=matrix(0,nrow=n,ncol=nsim)
+  a2=simulate(modelo,nsim=nsim)
+  
+  for (i in 1:nsim){
+    dados$y=a2[,i]
+    aj=update(modelo,y~.,data=dados)
+    m1[,i]=sort(rstandard(aj,type='deviance'))}
+  
+  li=apply(m1,1,quantile,0.025)
+  m=apply(m1,1,quantile,0.5)
+  ls=apply(m1,1,quantile,0.975)
+  
+  quantis=qnorm((1:n-0.5)/n)
+  
+  plot(rep(quantis,2),c(li,ls),type='n',xlab='Percentil da N(0,1)',ylab='Resíduos')
+  title('Gráfico Normal de Probabilidades')
+  lines(quantis,li,type='l')
+  lines(quantis,m,type='l',lty=2)
+  lines(quantis,ls,type='l')
+  points(quantis,r1,pch=16,cex=0.75)
+}
+
+envelope(modelo_logit_final)
+
+```
+
+
+---
+
+## Diagnóstico de dados influentes
+
+A distância de Cook considera a influência da i-ésima observação em todos os valores ajustados. Já a matriz H estimada para MLGs pode ser usada para avaliar a leverage (alavancagem) para cada observação.
+
+<!-- após analisá-los, foi decidido pela continuidade desses na base de dados, já que não teríamos perdas significativas aos modelos. -->
+<!-- Observações 2, 152 e 159 indicadas no diagnóstico de dados influentes:  -->
+
+```{r}
+influenceIndexPlot(modelo_logit_final,vars=c("Cook", "hat"), main = "Gráficos de Diagnóstico")
+```
+
+
+
+```{r, eval=FALSE,include=FALSE}
+df_mi <- trainData[c(2,152,159),c(1,3,5,8,10,12)]
+knitr::kable(df_mi, format = "latex", booktabs = T) %>%
+  kableExtra::kable_styling(font_size = 9) 
+
+```
+
+---
+
+## Desempenho do modelo
+
+A curva ROC (Receiver Operating Characteristic) está entre as métricas mais utilizadas para avaliação de um modelo de classificação e mostra o quão bem um modelo criado pode diferenciar duas classificações, no caso deste trabalho, distinguir o falecimento ou não dos pacientes do hospital no Paquistão.
+
+<!-- A curva ROC é um gráfico da sensibilidade em função de (1-especificidade) para diversos pontos de corte -->
+
+<!-- A ROC possui dois parâmetros, que são eles a taxa de verdadeiros positivos, e a taxa de falsos positivos, traçando-os em diferentes limiares de classificação para cada ponto de corte, que no caso deste trabalho, foi definido como 0,46. -->
+
+<!-- Para simplificar a análise da curva ROC, a AUC (Area Under the ROC Curve) é uma maneira de resumir a ROC em um único valor, que varia de 0 até 1, sendo que quanto maior o AUC, melhor a capacidade de classificação do modelo. -->
+<!-- AUC: área sob a curva -->
+
+Para o modelo desenvolvido neste trabalho obteve-se um AUC de 0,8099, tal valor é considerado bom para um modelo de classificação. Pode-se dizer então, que o modelo logístico acerta corretamente 81% das predições feitas com a base de dados 
+de validação.
+<!-- utilizada na estimação dos parâmetros do modelo. -->
+
+
+<!-- A área sob a curva ROC é uma medida de poder preditivo do modelo -->
+
+
+---
+
+
+
+Quando o valor predito for maior que 0,46, considera-se a predição de falecimento do paciente e, caso contrário, a predição é de não falecimento.
+
+<!-- O ponto de corte ótimo é aquele mais distante da distância da reta identidade da curva ROC -->
+<!-- Após a construção da curva, o ponto estabelecido foi de 0,46. Ou seja, as estimativas para a variável resposta que fossem igual ou maior do que este valor seriam arredondadas para uma resposta positiva para falecimento, caso contrário seriam arredondadas para uma resposta negativa quanto ao falecimento dos pacientes. -->
+
+```{r}
+library(ResourceSelection)
+library(ROCR)
+library(pROC)
+probest=fitted(modelo_logit_final)
+info=roc(modelo_logit_final$y,probest,legacy.axes=TRUE)
+roc.df=data.frame(tpp=info$sensitivities*100,fpp=(1-info$specificities)*100,
+                  thresholds=info$thresholds)
+pred=prediction(probest,modelo_logit_final$y)
+perf=performance(pred,"tpr","fpr")#;perf #tpr tx dev vdd positivos
+#curca roc
+plot(perf,main="Curva Roc", xlab="1 − Especificidade", ylab="Sensibilidade")
+abline(0,1)
+area.ROC=performance(pred,measure = "auc")#;area.ROC@y.values
+MaxSeE=performance(pred,"sens","spec")#;MaxSeE
+#MaxSeE@alpha.values[[1]][which.max(MaxSeE@y.values[[1]]+MaxSeE@x.values[[1]])]
+
+```
+
+---
+
+<!-- Com os resultados de falecimento e não falecimento observados e preditos pelo modelo, construiu-se a matriz de confusão. Foram reservadas cerca de 30% das observações (88 jogos) do banco de dados para testar o poder preditivo do modelo. -->
+
+<!-- Dadas as predições e os valores realmente observados de y, podemos construir uma tabela de classificação. -->
+
+
+O poder preditivo do modelo logístico estimado foi avaliado por meio de algumas métricas de desempenho que são baseadas na Matriz de confusão.
+
+<!-- Os resultados demonstrados pelas métricas alcançadas pelo modelo denotam uma maior capacidade do modelo em prever casos de sobrevivência -->
+
+
+```{r}
+pred <- as.factor(predict(modelo_logit_final, newdata=testData, type="response") >= 0.4584054) %>%
+  fct_recode("Não" = "FALSE", "Sim" = "TRUE")
+df_cm<-caret::confusionMatrix(pred, testData$Falecimento,positive="Sim")
+
+cm <- as.matrix(df_cm[["table"]])
+names(dimnames(cm)) <- c("Valor Estimado", "Valor Observado")
+
+
+cm
+
+```
+
+A acurácia das predições realizadas é de 72,73%, um valor considerado aceitável para o modelo preditivo estimado neste trabalho, visto que é difícil prever eventos deste tipo e que a amostra utilizada para teste é pequena.
+
+<!-- Faltou só falar um pouco mais do fato da acurácia ter ficado tão boa porque um dos resultados é muito mais raro que o outro, a sensibilidade mostra como o negócio não é lá tão bom -->
+
+<!-- A acurácia de um modelo (ou de uma regra de classificação) é definida pela probabilidade de classificação correta -->
+
+<!-- A sensibilidade de um modelo é definida pela probabilidade de classificar como sucesso dado que se trata, de fato, de um sucesso -->
+
+<!-- A especificidade de um modelo é definida pela probabilidade de classificar como fracasso dado que se trata, de fato, de um fracasso -->
+
+```{r}
+acc_lr <- caret::confusionMatrix(pred, testData$Falecimento,positive="Sim")$overall["Accuracy"]
+tpr_lr <- caret::confusionMatrix(pred, testData$Falecimento,positive="Sim")$byClass["Sensitivity"]
+tnr_lr <- caret::confusionMatrix(pred, testData$Falecimento,positive="Sim")$byClass["Specificity"]
+
+m_tbl = tibble(
+  Métrica = c("Acurácia","Sensibilidade", "Especificidade"),
+  Resultado = c(acc_lr*100,tpr_lr*100,tnr_lr*100)
+)
+
+
+knitr::kable(m_tbl, format = "latex", booktabs = T,digits = c(0, 2,2),col.names = c('Métrica','Resultado (%)')) %>%
+  kableExtra::kable_styling(font_size = 9)
+```
+
+
+
+## Modelo Bayesiano
+
+
+Ajustou-se o modelo logístico bayesiano para este dados, onde a estimação dos parâmetros foi feita via inferência bayesiana por métodos MCMC utilizando o software R com o pacote `R2jags`.
+
+Além disso, sob o enfoque bayesiano, é necessário elicitar a priori para o vetor paramétrico $\beta$. Como não há nenhum conhecimento prévio sobre a influência das covariáveis, considerou-se para cada parâmetro $\beta_k$ a priori não informativa $N(0, 1000)$.
+
+Para implementação do método MCMC, gerou-se três cadeias para cada parâmetro. Após 10.000 iterações, obteve-se os traços das cadeias. Estipulou-se um burn in de 1000 iterações e thin de 90 resultando em uma amostra de 1000 observações para cada cadeia.
+
+<!-- Podemos ver que a convergência foi atingida muito rapidamente, por isso, estipulou-se um burn in de 1000 iterações e thin de 90 resultando em uma amostra de 1000 observações para cada cadeia que utilizaremos para fazer inferência sobre o vetor paramétrico $\beta$.  -->
+
+<!-- verifica-se que as 3 cadeias em rosa, verde e aazul estão misturadas e a convergência foi bem rápido devido aos mlgs são modelos bem comprtados-->
+
+<!-- Além disso, os gráficos de autocorrelação das cadeias não apresentam indícios de que há correlação entre os valores gerados em cada cadeia dos parâmetros. -->
+
+<!-- Os gráficos de autocorrelação das cadeias mostram autocorrelações muito baixas. -->
+
+
+
+
+```{r}
+library(R2jags)
+library(ggmcmc)
+load(file = "rdata_mlg.RData")
+```
+
+```{r, eval=FALSE,include=FALSE}
+dados = read_csv("heart_failure_clinical_records_dataset.csv")
+
+names(dados) = c("Idade", "Anemia", "CPK", "Diabetes",
+"FEVE", "Hipertensão", "Plaquetas", "Creatinina",
+"Sódio", "Sexo", "Tabagismo", "Tempo", "Falecimento")
+
+
+dados$Tempo <- NULL
+trainData2 <- dados[trainDataIndex, ]
+testData2 <- dados[-trainDataIndex, ]
+```
+
+
+```{r, eval=FALSE,include=FALSE}
+n <- nrow(trainData2)
+
+bayes.mod <- function(){
+  
+  for (i in 1:n) {
+    y[i] ~ dbern(p[i])
+    logit(p[i]) <- beta0 + beta1*x1[i] + beta2*x2[i] + beta3*x3[i] + beta4*x4[i] + beta5*x5[i]
+  }
+  
+  beta0 ~ dnorm(0,0.001)
+  beta1 ~ dnorm(0,0.001)
+  beta2 ~ dnorm(0,0.001)
+  beta3 ~ dnorm(0,0.001)
+  beta4 ~ dnorm(0,0.001)
+  beta5 ~ dnorm(0,0.001)
+  
+}
+
+y=trainData2$Falecimento
+x1=trainData2$Idade
+x2=trainData2$CPK
+x3=trainData2$FEVE
+x4=trainData2$Creatinina
+x5=trainData2$Sexo
+
+dat.jags = list("y","x1","x2","x3","x4","x5","n")
+bayes.mod.params<-c("beta0","beta1","beta2","beta3","beta4","beta5")
+bayes.mod.inits = function(){
+  list("beta0"=0,"beta1"=0,"beta2"=0,"beta3"=0,"beta4"=0,"beta5"=0)
+}
+
+bayes.mod.fit<-jags(data= dat.jags,inits= bayes.mod.inits,
+                    parameters.to.save= bayes.mod.params,n.chains=3,
+                    n.iter=10000,n.burnin=1000,
+                    model.file= bayes.mod, n.thin = 9)
+
+#n.thin=max(1, floor((100000 - 10000) / 1000)) #90
+#n.burnin=floor(100000/2)
+
+#print(bayes.mod.fit)
+#traceplot(bayes.mod.fit)
+#pdf("D:/beatr/Documentos/R/mlg_analisedados/bayes_trace.pdf")
+#traceplot(bayes.mod.fit)
+#dev.off()
+
+
+bayes.mod.fit.mcmc<-as.mcmc(bayes.mod.fit)
+summary(bayes.mod.fit.mcmc)
+#xyplot(bayes.mod.fit.mcmc,layout=c(3,3),aspect="fill")
+#densityplot(bayes.mod.fit.mcmc,layout=c(3,3),aspect="fill")
+#pdf("corr.pdf")
+#autocorr.plot(bayes.mod.fit.mcmc)
+#dev.off()
+#pdf("gelman.pdf")
+#gelman.plot(bayes.mod.fit.mcmc)
+#dev.off()
+#geweke.diag(bayes.mod.fit.mcmc)
+#pdf("geweke.pdf")
+#geweke.plot(bayes.mod.fit.mcmc)
+#dev.off()
+#raftery.diag(bayes.mod.fit.mcmc)
+#heidel.diag(bayes.mod.fit.mcmc)
+
+#save.image("~/R/mlg_analisedados/rdata_mlg.RData")
+```
+
+
+
+
+---
+
+## Análise gráfica
+
+<!-- Convergência dos parâmetros estimados pelo Modelo -->
+
+```{r, eval=FALSE,include=FALSE}
+S <- ggs(bayes.mod.fit.mcmc)
+
+S$Parameter <- recode_factor(S$Parameter, 
+              `beta0` = "Constante", 
+              `beta1` = "Idade", 
+              `beta2` = "CPK",
+              `beta3` = "FEVE",
+              `beta4` = "Creatinina",
+              `beta5` = "Sexo",
+              `deviance` = "deviance")
+
+
+
+#ggs_histogram(S) + facet_wrap(~ Parameter, ncol = 4, scales = "free")
+```
+
+
+
+Gráficos para convergência das cadeias para os parâmetros de $\beta_0$ a $\beta_5$:
+
+```{r}
+S <- S %>% filter(Parameter!="deviance")
+ggs_traceplot(S)  + facet_wrap(~ Parameter, ncol = 3, scales = "free")
+
+```
+
+---
+
+Densidade das cadeias para os parâmetros de $\beta_0$ a $\beta_5$: 
+
+```{r}
+ggs_density(S)  + facet_wrap(~ Parameter, ncol = 3, scales = "free")
+```
+
+
+---
+
+<!-- Esse gráfico nos permite vizualizar o quanto as observações estão correlacionadas com as subsequentes. -->
+
+Autocorrelação das cadeias para os parâmetros de $\beta_0$ a $\beta_5$:
+
+```{r}
+ggs_autocorrelation(S)  + facet_wrap(~ Parameter, ncol = 3, scales = "free")
+
+```
+
+---
+
+<!-- O estudo de convergência foi feito utilizando os critérios de Geweke -->
+<!-- O teste de Geweke compara os dez por cento inicial da cadeia de cada parâmetro, com cinquenta por cento final da própria cadeia. A partir deste critério, obtém-se uma estatística a qual pode ser comparada com os quantis da distribuição normal, ou valores críticos -1,96 (-2) e 1,96 (2). Valores da estatística mais extremos do que estes indicaria falta de convergência. -->
+
+
+Estatísticas do teste de Geweke das cadeias para cada parâmetro:
+
+```{r}
+ggs_geweke(S)  + facet_wrap(~ Parameter, ncol = 3, scales = "free")
+
+```
+
+---
+
+<!-- Desta maneira conclui-se graficamente e pelo critério considerado que as cadeias convergem -->
+
+<!-- após análise gráfica verifica-se que temos indícios de convergencia e podemos obter as estimativas dos parâmetros considerando as 3 cadeias-->
+<!-- IC: intervalos de credibilidade de 95% -->
+
+<!-- Na Tabela abaixo temos as estimativas pontuais obtidas para cada beta_k, bem como os limites inferior e superior de seus respectivos intervalos de 95% de confiança. -->
+
+Estimativas dos parâmetros:
+
+```{r, eval=FALSE,include=FALSE}
+devtools::source_url("https://raw.githubusercontent.com/jkarreth/JKmisc/master/mcmctab.R")
+
+bayes.mod.fit.tab <- mcmctab(bayes.mod.fit, pars = c("beta"))
+bayes.mod.fit.tab$Variable <- c("Constante", 
+                                "Idade", 
+                                "CPK",
+                                "FEVE",
+                                "Creatinina",
+                                "Sexo")
+```
+
+
+
+
+```{r}
+knitr::kable(bayes.mod.fit.tab, format = "latex", booktabs = T,
+      digits = c(0,5,3,3,3),
+      col.names = c("Variável", "Média", "Std. Dev.", "Lim inf 95% IC", "Lim sup 95% IC")) %>%
+  kableExtra::kable_styling(latex_options="scale_down") 
+```
+
+---
+
+Matriz de Confusão:
+
+```{r}
+m_bayes <- as.data.frame(bayes.mod.fit[["BUGSoutput"]][["sims.matrix"]])
+testData_bayes <- testData2 %>% dplyr::select(Idade, CPK, FEVE, Creatinina, Sexo)
+testData_bayes <- cbind(Constante = rep(1,n=length(testData_bayes)),testData_bayes)
+
+m_bayes$deviance <- NULL
+m_bayes <- as.matrix(m_bayes)
+testData_bayes <- as.matrix(testData_bayes)
+
+prev1 <- testData_bayes %*% t(m_bayes)
+
+eta <- apply(prev1,1,mean)
+
+pred_bayes <- ifelse(exp(eta)/(1+exp(eta)) >  0.4584054, 1, 0)
+testData2$pred_bayes <- pred_bayes
+
+cm_bayes <- as.matrix(table(testData2$pred_bayes,testData2$Falecimento))
+names(dimnames(cm_bayes)) <- c("Valor Estimado", "Valor Observado")
+rownames(cm_bayes) <- c("Não","Sim")
+colnames(cm_bayes) <- c("Não","Sim")
+
+cm_bayes
+
+```
+
+<!-- O modelo logístico bayesiano, que além de gerar uma alta proporção de acertos nas previsões, permitiu identificar que fatores como Idade, CPK, FEVE, Sexo e Creatinina são relevantes para mapear pacientes propensos a falecimento de doenças cardíacas, sendo que este último fator mostrou ser o mais impactante no cálculo das probabilidades. -->
+
+Os valores da matriz de confusão foram iguais aos obtidos no modelo clássico e por isso teremos os mesmos valores das métricas de desempenho do modelo: acurácia, sensibilidade e especificidade.
+
+## Conclusão 
+
+
+* As três funções de ligação usadas para casos em que a variável resposta é do tipo binária ficaram bem ajustadas aos modelos propostos. Optou-se pela função logit, pois é mais intuitiva em relação a interpretação de seus resultados.
+
+* Os resultados demonstrados pelas métricas alcançadas pelo modelo denotam uma maior capacidade do modelo em prever casos de sobrevivência.
+
+* Outro ponto importante é a acurácia do modelo adotado, prevendo corretamente cerca de 72,73% dos eventos. As métricas alcançadas ao final do estudo poderiam ter resultados mais proveitosos caso tivéssemos uma base mais igualitária na variável resposta.
+
+* As estimativas do modelo sob ponto de vista Bayesiano ficaram muito próximas do modelo clássico. 
+
+<!-- Estamos utlizando uma priori muito pouco informativa, logo esperamos que os resultados do modelo frquentista e bayesiano sejam próximos. -->
+
+
+## Referências
+
+Tanvir Ahmad et al. “Survival analysis of heart failure patients: A case study”. Em:PLOS ONE 12.7 (jul. de 2017), pp. 1–8.
+
+Dobson, Annette J., and Adrian G. Barnett. An introduction to generalized linear models. CRC press, 2018.
+
+Dunn, Peter K., and Gordon K. Smyth. Generalized linear models with examples in R. New York: Springer, 2018.
+
+---
+
+\begin{center}
+\Huge Obrigada!
+\end{center}
+
+
